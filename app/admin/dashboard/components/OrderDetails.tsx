@@ -221,7 +221,7 @@ export default function OrdersList() {
       ) : orders.length === 0 ? (
         <p className="text-gray-500 p-4">No orders found</p>
       ) : (
-        orders.map((order) => (
+        orders.slice().reverse().map((order) => (
           <div key={order.id} className="border rounded-lg p-3 mb-4 bg-white shadow-sm">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <h2 className="text-lg font-semibold">
