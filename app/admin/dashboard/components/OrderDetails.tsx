@@ -74,20 +74,21 @@ export default function OrdersList() {
     try {
       setPrintError(null);
       
-      // Mobile-friendly print handling
+      if (typeof window === 'undefined') {
+        throw new Error('Printing is only available in the browser');
+      }
+
       const printTemplate = createPrintTemplate(order);
-      const printWindow = window.open('', 'PrintWindow');
+      const printWindow = window.open('about:blank', 'PrintWindow');
       
       if (!printWindow) {
         throw new Error('Popup blocked! Please allow popups for printing.');
       }
-
-      // Delay content writing for mobile browsers
+      
       setTimeout(() => {
         printWindow.document.write(printTemplate);
         printWindow.document.close();
         
-        // Add print event listeners for error handling
         printWindow.onbeforeunload = () => {
           setPrintError('Printing was cancelled');
         };
@@ -96,7 +97,6 @@ export default function OrdersList() {
           printWindow.close();
         };
 
-        // Trigger print with fallback
         if (printWindow.print) {
           printWindow.print();
         } else {
@@ -109,13 +109,17 @@ export default function OrdersList() {
   };
 
   const createPrintTemplate = (order: Order) => {
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isMobile = typeof window !== 'undefined' && 
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      );
     const paperWidth = isMobile ? '57mm' : '80mm';
     const baseFontSize = isMobile ? '10px' : '12px';
 
     return `
       <html>
         <head>
+          <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'">
           <title>Invoice #${order.id}</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
