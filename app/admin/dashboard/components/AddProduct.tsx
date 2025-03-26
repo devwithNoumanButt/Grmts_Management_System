@@ -20,14 +20,14 @@ export default function AddProduct() {
       try {
         setIsLoading(true);
         await Promise.all([fetchCategories(), fetchBarcodes()]);
-      } catch (err) {
+      } catch {
         setError('Failed to initialize form data');
       } finally {
         setIsLoading(false);
       }
     };
     initializeData();
-  }, []);
+  }, []);  
 
   const fetchCategories = async () => {
     try {
