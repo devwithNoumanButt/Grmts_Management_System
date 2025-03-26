@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useReactToPrint } from "react-to-print";
 import { supabase } from "@/lib/supabase";
 
 interface Order {
@@ -30,253 +31,154 @@ interface OrderItem {
   created_at: string;
 }
 
+const PrintReceipt = React.forwardRef<HTMLDivElement, { order: Order }>(
+  ({ order }, ref) => {
+    const currencyFormatter = (value: number) => {
+      try {
+        return new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: "USD",
+        }).format(value);
+      } catch {
+        return `$${value.toFixed(2)}`;
+      }
+    };
+
+    return (
+      <div ref={ref} className="print-container">
+        <div className="header">
+          <h3>Fashion Arena</h3>
+          <div className="store-info">
+            <p>Opp. Prisma Mall Basement of Cafecito Grw Cantt.</p>
+            <p>Phone: 055-386577 / 0321-7456467</p>
+          </div>
+        </div>
+
+        <div className="order-info">
+          <p><strong>Invoice No:</strong> {order.id}</p>
+          <p><strong>Date:</strong> {new Date(order.created_at).toLocaleString()}</p>
+          <p><strong>Customer:</strong> {order.customer_name || "CASH CUSTOMER"}</p>
+          <p><strong>Phone:</strong> {order.phone_number || "-"}</p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th className="text-right">Qty</th>
+              <th className="text-right">Price</th>
+              <th className="text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {order.items.map((item, index) => (
+              <tr key={item.id}>
+                <td>{index + 1}. {item.product_name}</td>
+                <td className="text-right">{item.quantity}</td>
+                <td className="text-right">{currencyFormatter(item.price)}</td>
+                <td className="text-right">{currencyFormatter(item.total_after_discount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="total-section">
+          <p><strong>Subtotal:</strong> {currencyFormatter(order.subtotal_amount)}</p>
+          <p><strong>Discount:</strong> {currencyFormatter(order.discount_amount)}</p>
+          <p><strong>Total Payable:</strong> {currencyFormatter(order.total_amount)}</p>
+          <p><strong>Cash Received:</strong> {currencyFormatter(order.tendered_amount)}</p>
+          <p><strong>Change:</strong> {currencyFormatter(order.change_amount)}</p>
+        </div>
+
+        <div className="footer">
+          <p>Thank you for your purchase!</p>
+          <p>Returns accepted within 7 days with receipt</p>
+        </div>
+      </div>
+    );
+  }
+);
+
+PrintReceipt.displayName = "PrintReceipt";
+
 export default function OrdersList() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [printingOrderId, setPrintingOrderId] = useState<number | null>(null);
+  const [printingOrder, setPrintingOrder] = useState<Order | null>(null);
+  const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const fetchOrders = async () => {
+      setLoading(true);
+      try {
+        const { data: ordersData, error: ordersError } = await supabase
+          .from("orders")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (ordersError) throw ordersError;
+
+        const enrichedOrders = await Promise.all(
+          (ordersData || []).map(async (order) => {
+            const { data: itemsData, error: itemsError } = await supabase
+              .from("order_items")
+              .select("*")
+              .eq("order_id", order.id);
+
+            return { ...order, items: itemsError ? [] : itemsData || [] };
+          })
+        );
+        setOrders(enrichedOrders);
+      } catch (error) {
+        console.error("Error fetching orders:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchOrders();
   }, []);
 
-  const fetchOrders = async () => {
-    setLoading(true);
+  const handlePrintLog = useCallback(async (orderId: number) => {
     try {
-      const { data: ordersData, error: ordersError } = await supabase
-        .from("orders")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (ordersError) throw ordersError;
-
-      const enrichedOrders = await Promise.all(
-        (ordersData || []).map(async (order) => {
-          const { data: itemsData, error: itemsError } = await supabase
-            .from("order_items")
-            .select("*")
-            .eq("order_id", order.id);
-
-          return { ...order, items: itemsError ? [] : itemsData || [] };
-        })
-      );
-      setOrders(enrichedOrders);
-    } catch (error) {
-      console.error("Error fetching orders:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const currencyFormatter = (value: number) => {
-    try {
-      return new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-      }).format(value);
-    } catch {
-      return `$${value.toFixed(2)}`;
-    }
-  };
-
-  const handlePrint = (order: Order) => {
-    setPrintingOrderId(order.id);
-    const printWindow = window.open("", "_blank");
-    
-    if (!printWindow || printWindow.closed) {
-      alert("Please enable popups to print receipts");
-      setPrintingOrderId(null);
-      return;
-    }
-
-    try {
-      const printContent = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Invoice #${order.id}</title>
-            <meta name="viewport" content="width=72mm, initial-scale=1.0">
-            <style>
-              /* Base styles */
-              * {
-                box-sizing: border-box;
-                margin: 0;
-                padding: 0;
-                -webkit-print-color-adjust: exact !important;
-              }
-
-              body {
-                background: #ffffff !important;
-                color: #000000 !important;
-                font-family: 'Courier New', monospace;
-                font-size: 12px;
-                width: 72mm;
-                margin: 0 auto;
-                padding: 2mm;
-              }
-
-              /* Print-specific styles */
-              @media print {
-                @page {
-                  margin: 0;
-                  size: auto;
-                }
-
-                body {
-                  background: #fff !important;
-                  color: #000 !important;
-                  width: 72mm !important;
-                  margin: 0 !important;
-                  padding: 2mm !important;
-                }
-
-                .print-safe {
-                  background: #fff !important;
-                  color: #000 !important;
-                }
-              }
-
-              .header {
-                text-align: center;
-                margin-bottom: 4mm;
-                padding: 2mm 0;
-                border-bottom: 2px solid #000;
-              }
-
-              .store-info p {
-                margin: 2px 0;
-                font-size: 0.9em;
-              }
-
-              table {
-                width: 100%;
-                border-collapse: collapse;
-                margin: 3mm 0;
-                page-break-inside: avoid;
-              }
-
-              th, td {
-                padding: 1mm 0;
-                border-bottom: 1px solid #000;
-              }
-
-              .text-right {
-                text-align: right;
-              }
-
-              .total-section {
-                margin-top: 4mm;
-                padding-top: 2mm;
-                border-top: 2px solid #000;
-              }
-
-              .footer {
-                margin-top: 6mm;
-                text-align: center;
-                font-size: 0.8em;
-                padding: 2mm 0;
-                border-top: 1px dashed #000;
-              }
-
-              .order-info p {
-                margin: 2px 0;
-              }
-            </style>
-          </head>
-          <body class="print-safe">
-            <div class="header print-safe">
-              <h3>Fashion Arena</h3>
-              <div class="store-info">
-                <p>Opp. Prisma Mall Basement of Cafecito Grw Cantt.</p>
-                <p>Phone: 055-386577 / 0321-7456467</p>
-              </div>
-            </div>
-
-            <div class="order-info print-safe">
-              <p><strong>Invoice No:</strong> ${order.id}</p>
-              <p><strong>Date:</strong> ${new Date(order.created_at).toLocaleString()}</p>
-              <p><strong>Customer:</strong> ${order.customer_name || "CASH CUSTOMER"}</p>
-              <p><strong>Phone:</strong> ${order.phone_number || "-"}</p>
-            </div>
-
-            <table class="print-safe">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th class="text-right">Qty</th>
-                  <th class="text-right">Price</th>
-                  <th class="text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${order.items.map((item, index) => `
-                  <tr>
-                    <td>${index + 1}. ${item.product_name}</td>
-                    <td class="text-right">${item.quantity}</td>
-                    <td class="text-right">${currencyFormatter(item.price)}</td>
-                    <td class="text-right">${currencyFormatter(item.total_after_discount)}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-
-            <div class="total-section print-safe">
-              <p><strong>Subtotal:</strong> ${currencyFormatter(order.subtotal_amount)}</p>
-              <p><strong>Discount:</strong> ${currencyFormatter(order.discount_amount)}</p>
-              <p><strong>Total Payable:</strong> ${currencyFormatter(order.total_amount)}</p>
-              <p><strong>Cash Received:</strong> ${currencyFormatter(order.tendered_amount)}</p>
-              <p><strong>Change:</strong> ${currencyFormatter(order.change_amount)}</p>
-            </div>
-
-            <div class="footer print-safe">
-              <p>Thank you for your purchase!</p>
-              <p>Returns accepted within 7 days with receipt</p>
-            </div>
-
-            <script>
-              (function() {
-                function triggerPrint() {
-                  window.print();
-                  window.onafterprint = function() {
-                    window.close();
-                  };
-                }
-                
-                // First try
-                if (document.readyState === 'complete') {
-                  triggerPrint();
-                } else {
-                  window.addEventListener('load', triggerPrint);
-                }
-                
-                // Fallback for mobile browsers
-                setTimeout(triggerPrint, 1000);
-              })();
-            </script>
-          </body>
-        </html>
-      `;
-
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-
-      printWindow.addEventListener("beforeunload", () => {
-        setPrintingOrderId(null);
+      await supabase.from("print_logs").insert({
+        order_id: orderId,
+        printed_at: new Date().toISOString()
       });
-
     } catch (error) {
-      console.error("Print error:", error);
-      setPrintingOrderId(null);
-      alert("Failed to print receipt. Please try again.");
-      printWindow.close();
+      console.error("Failed to log print:", error);
     }
+  }, []);
+
+  const handlePrint = useReactToPrint({
+    content: () => printRef.current,
+    onBeforeGetContent: async () => {
+      if (!printingOrder) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    },
+    onAfterPrint: () => {
+      if (printingOrder) {
+        handlePrintLog(printingOrder.id);
+        setPrintingOrder(null);
+      }
+    },
+    removeAfterPrint: true,
+  });
+
+  const triggerPrint = (order: Order) => {
+    setPrintingOrder(order);
+    setTimeout(handlePrint, 100);
   };
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Orders</h1>
-      <div className="mb-4 text-sm text-blue-600 bg-blue-50 p-2 rounded">
-        Note: Please enable popups and allow background printing for best results
-      </div>
+      
+      {printingOrder && (
+        <div style={{ display: "none" }}>
+          <PrintReceipt ref={printRef} order={printingOrder} />
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center p-4">Loading orders...</div>
@@ -286,7 +188,7 @@ export default function OrdersList() {
         orders.map((order) => (
           <div key={order.id} className="border rounded-md p-4 mb-4 bg-white shadow-sm">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold">Order #${order.id}</h2>
+              <h2 className="text-xl font-semibold">Order #{order.id}</h2>
               <div className="flex gap-2">
                 <span
                   className={`px-2 py-1 text-sm rounded ${
@@ -298,11 +200,11 @@ export default function OrdersList() {
                   {order.payment_status}
                 </span>
                 <button
-                  onClick={() => handlePrint(order)}
-                  disabled={printingOrderId === order.id}
+                  onClick={() => triggerPrint(order)}
+                  disabled={!!printingOrder}
                   className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {printingOrderId === order.id ? (
+                  {printingOrder?.id === order.id ? (
                     <span className="flex items-center">
                       <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
@@ -367,6 +269,59 @@ export default function OrdersList() {
           </div>
         ))
       )}
+      
+      <style jsx global>{`
+        @media print {
+          @page {
+            size: 72mm auto;
+            margin: 2mm;
+          }
+          
+          body {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          
+          .print-container {
+            width: 72mm !important;
+            margin: 0 !important;
+            padding: 2mm !important;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+          }
+          
+          .header, .order-info, .total-section, .footer {
+            text-align: center;
+            margin-bottom: 4mm;
+          }
+          
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 3mm 0;
+          }
+          
+          th, td {
+            padding: 1mm 0;
+            border-bottom: 1px solid #000;
+          }
+          
+          .text-right {
+            text-align: right;
+          }
+        }
+      `}</style>
     </div>
   );
+}
+
+function currencyFormatter(value: number) {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(value);
+  } catch {
+    return `$${value.toFixed(2)}`;
+  }
 }
