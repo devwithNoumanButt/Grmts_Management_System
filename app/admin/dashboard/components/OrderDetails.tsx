@@ -49,21 +49,17 @@ export default function OrdersList() {
 
       if (ordersError) throw ordersError;
 
-      if (ordersData.length > 0) {
-        const enrichedOrders = await Promise.all(
-          ordersData.map(async (order) => {
-            const { data: itemsData, error: itemsError } = await supabase
-              .from("order_items")
-              .select("*")
-              .eq("order_id", order.id);
+      const enrichedOrders = await Promise.all(
+        (ordersData || []).map(async (order) => {
+          const { data: itemsData, error: itemsError } = await supabase
+            .from("order_items")
+            .select("*")
+            .eq("order_id", order.id);
 
-            return { ...order, items: itemsError ? [] : itemsData || [] };
-          })
-        );
-        setOrders(enrichedOrders);
-      } else {
-        setOrders([]);
-      }
+          return { ...order, items: itemsError ? [] : itemsData || [] };
+        })
+      );
+      setOrders(enrichedOrders);
     } catch (error) {
       console.error("Error fetching orders:", error);
     } finally {
@@ -71,85 +67,86 @@ export default function OrdersList() {
     }
   };
 
-  const handlePrint = (order: Order) => {
-    setPrintingOrderId(order.id);
+  const currencyFormatter = (value: number) => {
     try {
-      const printWindow = window.open("", "_blank");
-      if (!printWindow) {
-        alert("Please allow popups for printing");
-        return;
-      }
-
-      const currencyFormatter = new Intl.NumberFormat("en-US", {
+      return new Intl.NumberFormat("en-US", {
         style: "currency",
         currency: "USD",
-      });
+      }).format(value);
+    } catch {
+      return `$${value.toFixed(2)}`; // Fallback formatting
+    }
+  };
 
+  const handlePrint = (order: Order) => {
+    setPrintingOrderId(order.id);
+    const printWindow = window.open("", "_blank");
+    
+    if (!printWindow || printWindow.closed) {
+      alert("Please enable popups to print receipts");
+      setPrintingOrderId(null);
+      return;
+    }
+
+    try {
       const printContent = `
         <!DOCTYPE html>
         <html>
           <head>
             <title>Invoice #${order.id}</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-              @media print {
-                @page {
-                  margin: 0;
-                  size: 76mm auto;
-                }
-                body { 
-                  font-family: 'Courier New', monospace;
-                  font-size: 12px;
-                  width: 76mm;
-                  margin: 0 auto;
-                  padding: 2mm;
-                  -webkit-print-color-adjust: exact;
-                }
+              body {
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                width: 72mm;
+                margin: 0 auto;
+                padding: 2mm;
+                -webkit-print-color-adjust: exact;
               }
-              
               .header {
                 text-align: center;
                 margin-bottom: 4mm;
               }
-              
               .store-info p {
                 margin: 2px 0;
                 font-size: 0.9em;
               }
-              
               table {
                 width: 100%;
                 border-collapse: collapse;
                 margin: 3mm 0;
               }
-              
               th {
                 border-bottom: 1px solid #000;
                 padding: 2mm 0;
                 font-weight: bold;
               }
-              
               td {
                 padding: 1mm 0;
               }
-              
               .text-right {
                 text-align: right;
               }
-              
               .total-section {
                 margin-top: 4mm;
                 border-top: 1px dashed #000;
                 padding-top: 2mm;
               }
-              
               .footer {
                 margin-top: 6mm;
                 text-align: center;
                 font-size: 0.8em;
               }
-              
               .order-info p {
                 margin: 2px 0;
+              }
+              @media print {
+                body {
+                  width: 72mm !important;
+                  margin: 0 auto !important;
+                  padding: 2mm !important;
+                }
               }
             </style>
           </head>
@@ -164,12 +161,8 @@ export default function OrdersList() {
 
             <div class="order-info">
               <p><strong>Invoice No:</strong> ${order.id}</p>
-              <p><strong>Date:</strong> ${new Date(
-                order.created_at
-              ).toLocaleString()}</p>
-              <p><strong>Customer:</strong> ${
-                order.customer_name || "CASH CUSTOMER"
-              }</p>
+              <p><strong>Date:</strong> ${new Date(order.created_at).toLocaleString()}</p>
+              <p><strong>Customer:</strong> ${order.customer_name || "CASH CUSTOMER"}</p>
               <p><strong>Phone:</strong> ${order.phone_number || "-"}</p>
             </div>
 
@@ -189,41 +182,35 @@ export default function OrdersList() {
                     <tr>
                       <td>${index + 1}. ${item.product_name}</td>
                       <td class="text-right">${item.quantity}</td>
-                      <td class="text-right">${currencyFormatter.format(
-                        item.price
-                      )}</td>
-                      <td class="text-right">${currencyFormatter.format(
-                        item.total_after_discount
-                      )}</td>
+                      <td class="text-right">${currencyFormatter(item.price)}</td>
+                      <td class="text-right">${currencyFormatter(item.total_after_discount)}</td>
                     </tr>
                   `
-                  )
-                  .join("")}
+                  ).join("")}
               </tbody>
             </table>
 
             <div class="total-section">
-              <p><strong>Subtotal:</strong> ${currencyFormatter.format(
-                order.subtotal_amount
-              )}</p>
-              <p><strong>Discount:</strong> ${currencyFormatter.format(
-                order.discount_amount
-              )}</p>
-              <p><strong>Total Payable:</strong> ${currencyFormatter.format(
-                order.total_amount
-              )}</p>
-              <p><strong>Cash Received:</strong> ${currencyFormatter.format(
-                order.tendered_amount
-              )}</p>
-              <p><strong>Change:</strong> ${currencyFormatter.format(
-                order.change_amount
-              )}</p>
+              <p><strong>Subtotal:</strong> ${currencyFormatter(order.subtotal_amount)}</p>
+              <p><strong>Discount:</strong> ${currencyFormatter(order.discount_amount)}</p>
+              <p><strong>Total Payable:</strong> ${currencyFormatter(order.total_amount)}</p>
+              <p><strong>Cash Received:</strong> ${currencyFormatter(order.tendered_amount)}</p>
+              <p><strong>Change:</strong> ${currencyFormatter(order.change_amount)}</p>
             </div>
 
             <div class="footer">
               <p>Thank you for your purchase!</p>
               <p>Returns accepted within 7 days with receipt</p>
             </div>
+            
+            <script>
+              setTimeout(function() {
+                window.print();
+                window.onafterprint = function() {
+                  window.close();
+                };
+              }, 300);
+            </script>
           </body>
         </html>
       `;
@@ -231,23 +218,35 @@ export default function OrdersList() {
       printWindow.document.write(printContent);
       printWindow.document.close();
 
-      printWindow.addEventListener("load", () => {
-        setTimeout(() => {
-          printWindow.print();
-          printWindow.close();
-          setPrintingOrderId(null);
-        }, 500);
+      // Mobile print handler
+      const printHandler = () => {
+        printWindow.print();
+        printWindow.onafterprint = () => printWindow.close();
+      };
+
+      // Double trigger for compatibility
+      printWindow.document.addEventListener("DOMContentLoaded", printHandler);
+      setTimeout(printHandler, 1000);
+
+      // Cleanup if window closes
+      printWindow.addEventListener("beforeunload", () => {
+        setPrintingOrderId(null);
       });
+
     } catch (error) {
       console.error("Print error:", error);
-      alert("Failed to print receipt. Please try again.");
       setPrintingOrderId(null);
+      alert("Failed to print receipt. Please try again.");
+      printWindow.close();
     }
   };
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Orders</h1>
+      <div className="mb-4 text-sm text-blue-600">
+        Note: Please allow popups for printing functionality
+      </div>
 
       {loading ? (
         <p>Loading orders...</p>
@@ -278,7 +277,7 @@ export default function OrdersList() {
               </div>
             </div>
 
-            <div className="mt-2 grid grid-cols-2 gap-4">
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <p>
                   <strong>Customer:</strong> {order.customer_name}
@@ -289,19 +288,19 @@ export default function OrdersList() {
               </div>
               <div>
                 <p>
-                  <strong>Subtotal:</strong> ${order.subtotal_amount.toFixed(2)}
+                  <strong>Subtotal:</strong> {currencyFormatter(order.subtotal_amount)}
                 </p>
                 <p>
-                  <strong>Discount:</strong> ${order.discount_amount.toFixed(2)}
+                  <strong>Discount:</strong> {currencyFormatter(order.discount_amount)}
                 </p>
                 <p>
-                  <strong>Total:</strong> ${order.total_amount.toFixed(2)}
+                  <strong>Total:</strong> {currencyFormatter(order.total_amount)}
                 </p>
                 <p>
-                  <strong>Tendered:</strong> ${order.tendered_amount.toFixed(2)}
+                  <strong>Tendered:</strong> {currencyFormatter(order.tendered_amount)}
                 </p>
                 <p>
-                  <strong>Change:</strong> ${order.change_amount.toFixed(2)}
+                  <strong>Change:</strong> {currencyFormatter(order.change_amount)}
                 </p>
                 <p>
                   <strong>Payment Method:</strong> {order.payment_method}
@@ -312,38 +311,40 @@ export default function OrdersList() {
             {order.items.length > 0 ? (
               <div className="mt-4">
                 <h3 className="font-semibold mb-2">Items:</h3>
-                <table className="w-full border-collapse border border-gray-300">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="border border-gray-300 p-2">Product</th>
-                      <th className="border border-gray-300 p-2">Price</th>
-                      <th className="border border-gray-300 p-2">Qty</th>
-                      <th className="border border-gray-300 p-2">Discount</th>
-                      <th className="border border-gray-300 p-2">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {order.items.map((item) => (
-                      <tr key={item.id}>
-                        <td className="border border-gray-300 p-2">
-                          {item.product_name}
-                        </td>
-                        <td className="border border-gray-300 p-2">
-                          ${item.price.toFixed(2)}
-                        </td>
-                        <td className="border border-gray-300 p-2">
-                          {item.quantity}
-                        </td>
-                        <td className="border border-gray-300 p-2">
-                          {item.discount_percentage}%
-                        </td>
-                        <td className="border border-gray-300 p-2">
-                          ${item.total_after_discount.toFixed(2)}
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse border border-gray-300">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="border border-gray-300 p-2">Product</th>
+                        <th className="border border-gray-300 p-2">Price</th>
+                        <th className="border border-gray-300 p-2">Qty</th>
+                        <th className="border border-gray-300 p-2">Discount</th>
+                        <th className="border border-gray-300 p-2">Total</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {order.items.map((item) => (
+                        <tr key={item.id}>
+                          <td className="border border-gray-300 p-2">
+                            {item.product_name}
+                          </td>
+                          <td className="border border-gray-300 p-2">
+                            {currencyFormatter(item.price)}
+                          </td>
+                          <td className="border border-gray-300 p-2">
+                            {item.quantity}
+                          </td>
+                          <td className="border border-gray-300 p-2">
+                            {item.discount_percentage}%
+                          </td>
+                          <td className="border border-gray-300 p-2">
+                            {currencyFormatter(item.total_after_discount)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : (
               <p className="text-gray-500 mt-2">No items in this order.</p>
