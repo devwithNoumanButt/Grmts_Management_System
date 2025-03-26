@@ -9,7 +9,7 @@
 'use client';
 
 import { useState } from 'react';
-import { FiHome, FiUser, FiSettings, FiLogOut } from 'react-icons/fi';
+import { FiHome, FiUser, FiSettings } from 'react-icons/fi';
 
 export default function Dashboard() {
   const [active, setActive] = useState('Home');
