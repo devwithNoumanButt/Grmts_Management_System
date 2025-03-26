@@ -1,5 +1,4 @@
 'use client';
-
 import React, { useState, useEffect } from 'react';
 import { DollarSign, Package, Calendar } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
