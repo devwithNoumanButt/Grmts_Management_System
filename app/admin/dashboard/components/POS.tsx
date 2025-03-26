@@ -1,6 +1,5 @@
 'use client';
 
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Tag, Search, Filter, ShoppingCart, Trash2, Calculator, X } from 'lucide-react';
@@ -52,64 +51,42 @@ export default function POSSystemPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Add a new state for controlling print slip visibility
-
-
   useEffect(() => {
     fetchProducts();
     fetchCategories();
   }, []);
 
-  // Fetch products from Supabase
   const fetchProducts = async () => {
     const { data, error } = await supabase.from('products').select('*');
-    if (error) {
-      console.error('Error fetching products:', error);
-    } else {
-      setProducts(data || []);
-    }
+    if (error) console.error('Error fetching products:', error);
+    else setProducts(data || []);
   };
 
-  // Fetch categories from Supabase
   const fetchCategories = async () => {
     const { data, error } = await supabase.from('categories').select('id, name');
-    if (error) {
-      console.error('Error fetching categories:', error);
-    } else {
-      setCategories(data || []);
-    }
+    if (error) console.error('Error fetching categories:', error);
+    else setCategories(data || []);
   };
 
-  // Filter products based on search and category
   const filteredProducts = products.filter((product) => {
     const matchesSearch =
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.code.toLowerCase().includes(searchTerm.toLowerCase());
-
     const matchesCategory = !selectedCategory || product.category_id === Number(selectedCategory);
-
     return matchesSearch && matchesCategory;
   });
 
-  // Calculations
   const calculateTotals = (price: number, qty: number, disc: number) => {
     const subtotal = price * qty;
     const discountAmount = (subtotal * disc) / 100;
-    return {
-      subtotal,
-      totalAfterDiscount: subtotal - discountAmount
-    };
+    return { subtotal, totalAfterDiscount: subtotal - discountAmount };
   };
 
   const totalAmount = orderItems.reduce((sum, item) => sum + item.totalAfterDiscount, 0);
   const change = Number(tenderedAmount) - totalAmount;
 
-  // Formatting
-  const formatCurrency = (amount: number) => {
-    return `PKR ${amount.toLocaleString('en-PK')}`;
-  };
+  const formatCurrency = (amount: number) => `PKR ${amount.toLocaleString('en-PK')}`;
 
-  // Event handlers
   const handleSelectProduct = (product: Product) => {
     setSelectedProduct(product);
     setQuantity('1');
@@ -122,8 +99,6 @@ export default function POSSystemPage() {
     const qty = Number(quantity);
     const disc = Number(discount);
     const { subtotal, totalAfterDiscount } = calculateTotals(selectedProduct.price, qty, disc);
-
-    // Find category name for the selected product
     const category = categories.find(cat => cat.id === selectedProduct.category_id)?.name;
 
     const newItem: OrderItem = {
@@ -137,42 +112,32 @@ export default function POSSystemPage() {
 
     setOrderItems(prev => [...prev, newItem]);
     setSelectedProduct(null);
-    setQuantity('1');
-    setDiscount('0');
   };
 
   const removeItem = (index: number) => {
     setOrderItems(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Save order to database
   const saveOrderToDatabase = async () => {
     try {
-      // First create the order header
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
-        .insert([
-          {
-            customer_name: customerName,
-            phone_number: phoneNumber,
-            total_amount: totalAmount,
-            subtotal_amount: orderItems.reduce((sum, item) => sum + item.subtotal, 0),
-            discount_amount: orderItems.reduce((sum, item) => sum + (item.subtotal - item.totalAfterDiscount), 0),
-            tendered_amount: Number(tenderedAmount),
-            change_amount: Number(tenderedAmount) - totalAmount,
-            payment_status: 'completed'
-          }
-        ])
+        .insert([{
+          customer_name: customerName || 'Cash Customer',
+          phone_number: phoneNumber,
+          total_amount: totalAmount,
+          subtotal_amount: orderItems.reduce((sum, item) => sum + item.subtotal, 0),
+          discount_amount: orderItems.reduce((sum, item) => sum + (item.subtotal - item.totalAfterDiscount), 0),
+          tendered_amount: Number(tenderedAmount),
+          change_amount: change,
+          payment_status: 'completed'
+        }])
         .select();
 
       if (orderError) throw orderError;
 
-      // Get the newly created order ID
-      const orderId = orderData[0].id;
-
-      // Create order items
       const orderItemsToInsert = orderItems.map(item => ({
-        order_id: orderId,
+        order_id: orderData[0].id,
         product_id: item.id,
         product_name: item.name,
         price: item.price,
@@ -187,7 +152,6 @@ export default function POSSystemPage() {
         .insert(orderItemsToInsert);
 
       if (itemsError) throw itemsError;
-
       return true;
     } catch (error) {
       console.error('Error saving order:', error);
@@ -195,9 +159,12 @@ export default function POSSystemPage() {
     }
   };
 
-  // Handle order saving
   const handleSaveOrder = async () => {
-    // Validate tendered amount
+    if (phoneNumber && !/^[0-9+\- ]+$/.test(phoneNumber)) {
+      setErrorMessage('Invalid phone number format');
+      return;
+    }
+
     if (Number(tenderedAmount) < totalAmount) {
       setErrorMessage('Tendered amount must be greater than or equal to total amount');
       return;
@@ -207,100 +174,36 @@ export default function POSSystemPage() {
     setErrorMessage(null);
     
     try {
-      // Save order to database
-      const { data: orderData, error: orderError } = await supabase
-        .from('orders')
-        .insert([
-          {
-            customer_name: customerName || 'Cash Customer',
-            phone_number: phoneNumber,
-            total_amount: totalAmount,
-            subtotal_amount: orderItems.reduce((sum, item) => sum + item.subtotal, 0),
-            discount_amount: orderItems.reduce((sum, item) => sum + (item.subtotal - item.totalAfterDiscount), 0),
-            tendered_amount: Number(tenderedAmount),
-            change_amount: Number(tenderedAmount) - totalAmount,
-            payment_status: 'completed'
-          }
-        ])
-        .select();
-
-      if (orderError) throw orderError;
-
-      // Get the newly created order ID
-      const orderId = orderData[0].id;
-
-      // Create order items
-      const orderItemsToInsert = orderItems.map(item => ({
-        order_id: orderId,
-        product_id: item.id,
-        product_name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        discount_percentage: item.discount,
-        subtotal: item.subtotal,
-        total_after_discount: item.totalAfterDiscount
-      }));
-
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .insert(orderItemsToInsert);
-
-      if (itemsError) throw itemsError;
-
-      // Reset state after successful order
-      setOrderItems([]);
-      setCustomerName('');
-      setPhoneNumber('');
-      setTenderedAmount('');
-      setShowPaymentModal(false);
-      setIsLoading(false);
-      setSuccessMessage('Order completed successfully!');
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (error) {
-      console.error('Error saving order:', error);
+      const success = await saveOrderToDatabase();
+      if (success) {
+        setOrderItems([]);
+        setCustomerName('');
+        setPhoneNumber('');
+        setTenderedAmount('');
+        setShowPaymentModal(false);
+        setSuccessMessage('Order completed successfully!');
+        setTimeout(() => setSuccessMessage(null), 3000);
+      }
+    } catch{
       setErrorMessage('Failed to save order. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
-
-  // Create the order object
-  const order = {
-    date: new Date().toLocaleDateString('en-GB'),
-    customerName: customerName,
-    phoneNumber: phoneNumber,
-    orderItems: orderItems.map(item => ({
-      id: item.id,
-      name: item.name,
-      price: item.price,
-      quantity: item.quantity,
-      totalAfterDiscount: item.totalAfterDiscount,
-    })),
-    totalAmount: totalAmount,
-  };
-
+  
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Point of Sale System</h1>
       
-      {/* Success Message */}
       {successMessage && (
         <div className="fixed top-4 right-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded z-50">
           {successMessage}
         </div>
       )}
 
-      {/* Payment Modal */}
       {showPaymentModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
-            {/* Error Message */}
-            {errorMessage && (
-              <div className="absolute -top-16 left-0 right-0 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                {errorMessage}
-              </div>
-            )}
-
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold">Complete Payment</h3>
               <button
@@ -311,7 +214,13 @@ export default function POSSystemPage() {
                 <X className="h-6 w-6" />
               </button>
             </div>
-            
+
+            {errorMessage && (
+              <div className="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                {errorMessage}
+              </div>
+            )}
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -339,6 +248,7 @@ export default function POSSystemPage() {
                   disabled={isLoading}
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Change
@@ -357,9 +267,7 @@ export default function POSSystemPage() {
                   disabled={Number(tenderedAmount) < totalAmount || isLoading}
                   className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
                 >
-                  {isLoading ? (
-                    <span>Processing...</span>
-                  ) : (
+                  {isLoading ? 'Processing...' : (
                     <>
                       <Calculator className="h-5 w-5" />
                       <span>Complete Order</span>
@@ -368,7 +276,7 @@ export default function POSSystemPage() {
                 </button>
                 <button
                   onClick={() => setShowPaymentModal(false)}
-                  className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors duration-200"
                   disabled={isLoading}
                 >
                   Cancel
@@ -378,7 +286,6 @@ export default function POSSystemPage() {
           </div>
         </div>
       )}
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Product Selection */}
         <div className="lg:col-span-2">
