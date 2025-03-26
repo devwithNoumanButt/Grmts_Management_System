@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useReactToPrint } from "react-to-print";
-import { supabase } from "@/lib/supabase";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
 interface Order {
   id: number;
@@ -106,38 +106,39 @@ export default function OrdersList() {
   const [loading, setLoading] = useState(true);
   const [printingOrder, setPrintingOrder] = useState<Order | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+  const supabase = createClientComponentClient();
+
+  const fetchOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: ordersData, error: ordersError } = await supabase
+        .from("orders")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (ordersError) throw ordersError;
+
+      const enrichedOrders = await Promise.all(
+        ordersData.map(async (order) => {
+          const { data: itemsData, error: itemsError } = await supabase
+            .from("order_items")
+            .select("*")
+            .eq("order_id", order.id);
+
+          return { ...order, items: itemsError ? [] : itemsData || [] };
+        })
+      );
+      setOrders(enrichedOrders);
+    } catch (error) {
+      console.error("Error fetching orders:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase]);
 
   useEffect(() => {
-    const fetchOrders = async () => {
-      setLoading(true);
-      try {
-        const { data: ordersData, error: ordersError } = await supabase
-          .from("orders")
-          .select("*")
-          .order("created_at", { ascending: false });
-
-        if (ordersError) throw ordersError;
-
-        const enrichedOrders = await Promise.all(
-          (ordersData || []).map(async (order) => {
-            const { data: itemsData, error: itemsError } = await supabase
-              .from("order_items")
-              .select("*")
-              .eq("order_id", order.id);
-
-            return { ...order, items: itemsError ? [] : itemsData || [] };
-          })
-        );
-        setOrders(enrichedOrders);
-      } catch (error) {
-        console.error("Error fetching orders:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchOrders();
-  }, []);
+  }, [fetchOrders]);
 
   const handlePrintLog = useCallback(async (orderId: number) => {
     try {
@@ -148,13 +149,12 @@ export default function OrdersList() {
     } catch (error) {
       console.error("Failed to log print:", error);
     }
-  }, []);
+  }, [supabase]);
 
   const handlePrint = useReactToPrint({
     content: () => printRef.current,
     onBeforeGetContent: async () => {
-      if (!printingOrder) return;
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     },
     onAfterPrint: () => {
       if (printingOrder) {
@@ -162,7 +162,6 @@ export default function OrdersList() {
         setPrintingOrder(null);
       }
     },
-    removeAfterPrint: true,
   });
 
   const triggerPrint = (order: Order) => {
@@ -280,19 +279,26 @@ export default function OrdersList() {
           body {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
+            background: white !important;
           }
           
           .print-container {
             width: 72mm !important;
-            margin: 0 !important;
+            margin: 0 auto !important;
             padding: 2mm !important;
             font-family: 'Courier New', monospace;
             font-size: 12px;
           }
           
-          .header, .order-info, .total-section, .footer {
+          .header {
             text-align: center;
             margin-bottom: 4mm;
+            padding-bottom: 2mm;
+            border-bottom: 2px solid #000;
+          }
+          
+          .order-info p {
+            margin: 2px 0;
           }
           
           table {
@@ -308,6 +314,20 @@ export default function OrdersList() {
           
           .text-right {
             text-align: right;
+          }
+          
+          .total-section {
+            margin-top: 4mm;
+            padding-top: 2mm;
+            border-top: 2px solid #000;
+          }
+          
+          .footer {
+            margin-top: 6mm;
+            text-align: center;
+            font-size: 0.8em;
+            padding: 2mm 0;
+            border-top: 1px dashed #000;
           }
         }
       `}</style>
