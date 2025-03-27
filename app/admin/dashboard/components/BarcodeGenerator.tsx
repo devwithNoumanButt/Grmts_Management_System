@@ -9,13 +9,13 @@ interface Variant {
   price: number;
 }
 
-const BarcodeRow = memo(({ 
-  variant, 
-  onPrint, 
-  onDelete, 
-  onToggleSelect, 
-  isSelected, 
-  isPrinting 
+const BarcodeRow = memo(function BarcodeRow({
+  variant,
+  onPrint,
+  onDelete,
+  onToggleSelect,
+  isSelected,
+  isPrinting
 }: {
   variant: Variant;
   onPrint: () => void;
@@ -23,45 +23,49 @@ const BarcodeRow = memo(({
   onToggleSelect?: (checked: boolean) => void;
   isSelected?: boolean;
   isPrinting: boolean;
-}) => (
-  <div className="flex justify-between items-center border-b py-2">
-    <div className="flex items-center gap-2">
-      {onToggleSelect && (
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={(e) => onToggleSelect(e.target.checked)}
-          className="mr-2"
-          disabled={isPrinting}
-          aria-label={`Select ${variant.size}`}
-        />
-      )}
-      <span>
-        {variant.size} - PKR {variant.price.toLocaleString()}
-      </span>
-    </div>
-    <div className="flex gap-2">
-      <button
-        onClick={onPrint}
-        className="text-blue-500 hover:text-blue-700"
-        disabled={isPrinting}
-        aria-label={`Print ${variant.size}`}
-      >
-        Print
-      </button>
-      {onDelete && (
+}) {
+  return (
+    <div className="flex justify-between items-center border-b py-2">
+      <div className="flex items-center gap-2">
+        {onToggleSelect && (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={(e) => onToggleSelect(e.target.checked)}
+            className="mr-2"
+            disabled={isPrinting}
+            aria-label={`Select ${variant.size}`}
+          />
+        )}
+        <span>
+          {variant.size} - PKR {variant.price.toLocaleString()}
+        </span>
+      </div>
+      <div className="flex gap-2">
         <button
-          onClick={onDelete}
-          className="text-red-500 hover:text-red-700"
+          onClick={onPrint}
+          className="text-blue-500 hover:text-blue-700"
           disabled={isPrinting}
-          aria-label={`Delete ${variant.size}`}
+          aria-label={`Print ${variant.size}`}
         >
-          Delete
+          Print
         </button>
-      )}
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            className="text-red-500 hover:text-red-700"
+            disabled={isPrinting}
+            aria-label={`Delete ${variant.size}`}
+          >
+            Delete
+          </button>
+        )}
+      </div>
     </div>
-  </div>
-));
+  );
+});
+
+BarcodeRow.displayName = "BarcodeRow";
 
 export default function BarcodeGenerator() {
   const [size, setSize] = useState("");
