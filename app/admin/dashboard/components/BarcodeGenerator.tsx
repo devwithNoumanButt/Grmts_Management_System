@@ -9,7 +9,14 @@ interface Variant {
   price: number;
 }
 
-const BarcodeRow = memo(({ variant, onPrint, onDelete, onToggleSelect, isSelected, isPrinting }: {
+const BarcodeRow = memo(({ 
+  variant, 
+  onPrint, 
+  onDelete, 
+  onToggleSelect, 
+  isSelected, 
+  isPrinting 
+}: {
   variant: Variant;
   onPrint: () => void;
   onDelete?: () => void;
@@ -56,7 +63,7 @@ const BarcodeRow = memo(({ variant, onPrint, onDelete, onToggleSelect, isSelecte
   </div>
 ));
 
-export default function BarcodeGeneratorPage() {
+export default function BarcodeGenerator() {
   const [size, setSize] = useState("");
   const [price, setPrice] = useState(1500);
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -297,6 +304,7 @@ export default function BarcodeGeneratorPage() {
                   checked 
                     ? [...prev, variant.id] 
                     : prev.filter(id => id !== variant.id)
+                );
               }}
               onPrint={() => handlePrint([variant])}
               onDelete={() => handleDeleteVariant(variant.id)}
@@ -324,7 +332,8 @@ export default function BarcodeGeneratorPage() {
               onPrint={() => handlePrint([variant])}
               onDelete={() => {
                 setCustomVariants(prev => 
-                  prev.filter((_, i) => i !== index))
+                  prev.filter((_, i) => i !== index)
+                );
               }}
             />
           ))}
