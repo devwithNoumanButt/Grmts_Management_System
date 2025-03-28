@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, memo } from "react";
+import { useState, useEffect, useCallback, memo, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 
 interface Variant {
@@ -15,7 +15,7 @@ const BarcodeRow = memo(function BarcodeRow({
   onDelete,
   onToggleSelect,
   isSelected,
-  isPrinting
+  isPrinting,
 }: {
   variant: Variant;
   onPrint: () => void;
@@ -77,15 +77,29 @@ export default function BarcodeGenerator() {
   const [isLoading, setIsLoading] = useState(true);
   const [isPrinting, setIsPrinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const printWindowRef = useRef<Window | null>(null);
+  const printTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (printWindowRef.current && !printWindowRef.current.closed) {
+        printWindowRef.current.close();
+      }
+      if (printTimeoutRef.current) {
+        clearTimeout(printTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
       const [variantsResponse, recentResponse] = await Promise.all([
         supabase.from("variants").select("*"),
-        supabase.from("recent_barcodes")
+        supabase
+          .from("recent_barcodes")
           .select("*")
           .order("created_at", { ascending: false })
-          .limit(10)
+          .limit(10),
       ]);
 
       if (variantsResponse.error) throw variantsResponse.error;
@@ -105,8 +119,8 @@ export default function BarcodeGenerator() {
     fetchData();
   }, [fetchData]);
 
-  const generateUniqueId = useCallback(() => 
-    `${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+  const generateUniqueId = useCallback(
+    () => `${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     []
   );
 
@@ -117,16 +131,16 @@ export default function BarcodeGenerator() {
     }
 
     try {
-      const newVariant: Variant = { 
-        id: generateUniqueId(), 
-        size: size.trim(), 
-        price 
+      const newVariant: Variant = {
+        id: generateUniqueId(),
+        size: size.trim(),
+        price,
       };
-      
+
       const { error } = await supabase.from("variants").insert([newVariant]);
       if (error) throw error;
 
-      setVariants(prev => [...prev, newVariant]);
+      setVariants((prev) => [...prev, newVariant]);
       setSize("");
       setPrice(1500);
       setError(null);
@@ -141,7 +155,7 @@ export default function BarcodeGenerator() {
       const { error } = await supabase.from("variants").delete().eq("id", id);
       if (error) throw error;
 
-      setVariants(prev => prev.filter(v => v.id !== id));
+      setVariants((prev) => prev.filter((v) => v.id !== id));
       setError(null);
     } catch (err) {
       console.error("Delete error:", err);
@@ -150,8 +164,8 @@ export default function BarcodeGenerator() {
   }, []);
 
   const handleAddToCustom = useCallback(() => {
-    const selectedVariants = variants.filter(v => selectedIds.includes(v.id));
-    setCustomVariants(prev => [...prev, ...selectedVariants]);
+    const selectedVariants = variants.filter((v) => selectedIds.includes(v.id));
+    setCustomVariants((prev) => [...prev, ...selectedVariants]);
     setSelectedIds([]);
   }, [variants, selectedIds]);
 
@@ -169,7 +183,9 @@ export default function BarcodeGenerator() {
       </style>
     `;
 
-    const barcodes = targets.map(v => `
+    const barcodes = targets
+      .map(
+        (v) => `
       <div class="barcode-container">
         <div class="barcode-info">
           Size: ${v.size} | Price: PKR ${v.price.toLocaleString()}
@@ -177,23 +193,28 @@ export default function BarcodeGenerator() {
         <svg id="barcode-${v.id}"></svg>
         <div class="barcode-id">${v.id}</div>
       </div>
-    `).join("");
+    `
+      )
+      .join("");
 
     const script = `
       <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
       <script>
         window.onload = () => {
           try {
-            ${targets.map(v => `
+            ${targets
+              .map(
+                (v) => `
               JsBarcode("#barcode-${v.id}", "${v.id}", {
                 format: "CODE128",
                 width: 2,
                 height: 60,
                 displayValue: false
-              });`).join("")}
-            window.print();
+              });`
+              )
+              .join("")}
           } catch (err) {
-            window.close();
+            console.error('Barcode error:', err);
           }
         };
       </script>
@@ -202,60 +223,123 @@ export default function BarcodeGenerator() {
     return { styles, barcodes, script };
   }, []);
 
-  const handlePrint = useCallback(async (targetVariants: Variant[], clearAfterPrint = false) => {
-    if (typeof window === "undefined" || targetVariants.length === 0 || isPrinting) return;
+  const handlePrint = useCallback(
+    async (targetVariants: Variant[], clearAfterPrint = false) => {
+      if (
+        typeof window === "undefined" ||
+        targetVariants.length === 0 ||
+        isPrinting
+      )
+        return;
 
-    setIsPrinting(true);
-    setError(null);
-    
-    try {
-      const printWindow = window.open("", "_blank", "width=800,height=600");
-      if (!printWindow) throw new Error("Popup blocked - please allow popups");
+      setIsPrinting(true);
+      setError(null);
 
-      const { styles, barcodes, script } = printContent(targetVariants);
-      
-      printWindow.document.write(`
+      try {
+        // Close existing print window
+        if (printWindowRef.current) {
+          printWindowRef.current.close();
+          printWindowRef.current = null;
+        }
+
+        const printWindow = window.open("", "_blank", "width=800,height=600");
+        printWindowRef.current = printWindow;
+
+        if (!printWindow)
+          throw new Error("Popup blocked - please allow popups");
+
+        const { styles, barcodes, script } = printContent(targetVariants);
+
+        printWindow.document.write(`
         <html>
           <head><title>Print Barcodes</title>${styles}</head>
           <body>${barcodes}${script}</body>
         </html>
       `);
-      printWindow.document.close();
+        printWindow.document.close();
 
-      const printSuccess = await new Promise((resolve) => {
-        printWindow.addEventListener("afterprint", () => resolve(true));
-        printWindow.addEventListener("load", () => {
-          printWindow.print();
-          setTimeout(() => resolve(false), 3000);
+        const printSuccess = await new Promise<boolean>((resolve) => {
+          let printAttempted = false;
+          let cleanupDone = false;
+
+          const doCleanup = () => {
+            if (cleanupDone) return;
+            cleanupDone = true;
+
+            if (printTimeoutRef.current) {
+              clearTimeout(printTimeoutRef.current);
+            }
+
+            try {
+              if (printWindow && !printWindow.closed) {
+                printWindow.close();
+              }
+            } catch (err) {
+              console.error("Window close error:", err);
+            }
+
+            printWindowRef.current = null;
+          };
+
+          const handleAfterPrint = () => {
+            if (!printAttempted) return;
+            doCleanup();
+            resolve(true);
+          };
+
+          const checkWindowState = () => {
+            if (printWindow.closed) {
+              doCleanup();
+              resolve(false);
+              return;
+            }
+
+            if (!printAttempted) {
+              printAttempted = true;
+              try {
+                printWindow.print();
+              } catch (err) {
+                doCleanup();
+                resolve(false);
+              }
+            }
+
+            printTimeoutRef.current = window.setTimeout(checkWindowState, 500);
+          };
+
+          printWindow.addEventListener("afterprint", handleAfterPrint);
+          printWindow.addEventListener("load", () => {
+            printTimeoutRef.current = window.setTimeout(checkWindowState, 1000);
+          });
         });
-      });
 
-      if (printSuccess) {
-        const { error } = await supabase
-          .from("recent_barcodes")
-          .insert(targetVariants);
-        if (error) throw error;
+        if (printSuccess) {
+          const { error } = await supabase
+            .from("recent_barcodes")
+            .insert(targetVariants);
+          if (error) throw error;
 
-        await fetchData();
-        if (clearAfterPrint) {
-          setCustomVariants([]);
-          setVariants([]);
+          await fetchData();
+          if (clearAfterPrint) {
+            setCustomVariants([]);
+            setVariants([]);
+          }
         }
+      } catch (err) {
+        if (err instanceof Error && !err.message.includes("Print window")) {
+          setError("Print failed - please allow popups and try again");
+        }
+      } finally {
+        setIsPrinting(false);
       }
-    } catch (err) {
-      if (err instanceof Error && !err.message.includes("Print window")) {
-        setError("Print failed - please allow popups and try again");
-      }
-    } finally {
-      setIsPrinting(false);
-    }
-  }, [isPrinting, printContent, fetchData]);
+    },
+    [isPrinting, printContent, fetchData]
+  );
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Barcode Generator</h1>
 
-      {/* Input Form */}
       <div className="grid grid-cols-2 gap-6 mb-4">
         <input
           type="text"
@@ -284,7 +368,6 @@ export default function BarcodeGenerator() {
 
       {error && <p className="mt-2 text-red-500 text-center">{error}</p>}
 
-      {/* Current Variants */}
       {variants.length > 0 && (
         <div className="mt-6">
           <div className="flex justify-between items-center mb-2">
@@ -297,17 +380,17 @@ export default function BarcodeGenerator() {
               Add to Custom
             </button>
           </div>
-          {variants.map(variant => (
+          {variants.map((variant) => (
             <BarcodeRow
               key={variant.id}
               variant={variant}
               isSelected={selectedIds.includes(variant.id)}
               isPrinting={isPrinting}
               onToggleSelect={(checked) => {
-                setSelectedIds(prev => 
-                  checked 
-                    ? [...prev, variant.id] 
-                    : prev.filter(id => id !== variant.id)
+                setSelectedIds((prev) =>
+                  checked
+                    ? [...prev, variant.id]
+                    : prev.filter((id) => id !== variant.id)
                 );
               }}
               onPrint={() => handlePrint([variant])}
@@ -324,7 +407,6 @@ export default function BarcodeGenerator() {
         </div>
       )}
 
-      {/* Custom Variants */}
       {customVariants.length > 0 && (
         <div className="mt-6">
           <h2 className="mb-2 font-semibold">Custom Variants</h2>
@@ -335,9 +417,7 @@ export default function BarcodeGenerator() {
               isPrinting={isPrinting}
               onPrint={() => handlePrint([variant])}
               onDelete={() => {
-                setCustomVariants(prev => 
-                  prev.filter((_, i) => i !== index)
-                );
+                setCustomVariants((prev) => prev.filter((_, i) => i !== index));
               }}
             />
           ))}
@@ -351,11 +431,10 @@ export default function BarcodeGenerator() {
         </div>
       )}
 
-      {/* Recent Barcodes */}
       {recentBarcodes.length > 0 && (
         <div className="mt-6">
           <h2 className="mb-2 font-semibold">Recent Barcodes</h2>
-          {recentBarcodes.map(variant => (
+          {recentBarcodes.map((variant) => (
             <BarcodeRow
               key={variant.id}
               variant={variant}
