@@ -81,9 +81,10 @@ export default function BarcodeGenerator() {
   const printTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const currentPrintWindow = printWindowRef.current;
     return () => {
-      if (printWindowRef.current && !printWindowRef.current.closed) {
-        printWindowRef.current.close();
+      if (currentPrintWindow && !currentPrintWindow.closed) {
+        currentPrintWindow.close();
       }
       if (printTimeoutRef.current) {
         clearTimeout(printTimeoutRef.current);
@@ -244,17 +245,18 @@ export default function BarcodeGenerator() {
         const printWindow = window.open("", "_blank", "width=800,height=600");
         printWindowRef.current = printWindow;
 
-        if (!printWindow)
+        if (!printWindow) {
           throw new Error("Popup blocked - please allow popups");
+        }
 
         const { styles, barcodes, script } = printContent(targetVariants);
 
         printWindow.document.write(`
-        <html>
-          <head><title>Print Barcodes</title>${styles}</head>
-          <body>${barcodes}${script}</body>
-        </html>
-      `);
+          <html>
+            <head><title>Print Barcodes</title>${styles}</head>
+            <body>${barcodes}${script}</body>
+          </html>
+        `);
         printWindow.document.close();
 
         const printSuccess = await new Promise<boolean>((resolve) => {
@@ -298,6 +300,7 @@ export default function BarcodeGenerator() {
               try {
                 printWindow.print();
               } catch (error) {
+                console.error("Print execution error:", error);
                 doCleanup();
                 resolve(false);
               }
