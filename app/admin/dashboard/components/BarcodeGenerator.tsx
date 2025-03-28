@@ -31,7 +31,7 @@ const BarcodeRow = memo(function BarcodeRow({
           <input
             type="checkbox"
             checked={isSelected}
-            onChange={(e) => onToggleSelect(e.target.checked)}
+            onChange={(e) => onToggleSelect?.(e.target.checked)}
             className="mr-2"
             disabled={isPrinting}
             aria-label={`Select ${variant.size}`}
@@ -107,8 +107,8 @@ export default function BarcodeGenerator() {
 
       setVariants(variantsResponse.data || []);
       setRecentBarcodes(recentResponse.data || []);
-    } catch (err) {
-      console.error("Fetch error:", err);
+    } catch (error) {
+      console.error("Fetch error:", error);
       setError("Failed to load data");
     } finally {
       setIsLoading(false);
@@ -144,8 +144,8 @@ export default function BarcodeGenerator() {
       setSize("");
       setPrice(1500);
       setError(null);
-    } catch (err) {
-      console.error("Insert error:", err);
+    } catch (error) {
+      console.error("Insert error:", error);
       setError("Failed to add variant");
     }
   }, [size, price, generateUniqueId]);
@@ -157,8 +157,8 @@ export default function BarcodeGenerator() {
 
       setVariants((prev) => prev.filter((v) => v.id !== id));
       setError(null);
-    } catch (err) {
-      console.error("Delete error:", err);
+    } catch (error) {
+      console.error("Delete error:", error);
       setError("Failed to delete variant");
     }
   }, []);
@@ -213,8 +213,8 @@ export default function BarcodeGenerator() {
               });`
               )
               .join("")}
-          } catch (err) {
-            console.error('Barcode error:', err);
+          } catch (error) {
+            console.error('Barcode error:', error);
           }
         };
       </script>
@@ -236,7 +236,6 @@ export default function BarcodeGenerator() {
       setError(null);
 
       try {
-        // Close existing print window
         if (printWindowRef.current) {
           printWindowRef.current.close();
           printWindowRef.current = null;
@@ -274,8 +273,8 @@ export default function BarcodeGenerator() {
               if (printWindow && !printWindow.closed) {
                 printWindow.close();
               }
-            } catch (err) {
-              console.error("Window close error:", err);
+            } catch (error) {
+              console.error("Window close error:", error);
             }
 
             printWindowRef.current = null;
@@ -298,7 +297,7 @@ export default function BarcodeGenerator() {
               printAttempted = true;
               try {
                 printWindow.print();
-              } catch (err) {
+              } catch (error) {
                 doCleanup();
                 resolve(false);
               }
@@ -325,10 +324,14 @@ export default function BarcodeGenerator() {
             setVariants([]);
           }
         }
-      } catch (err) {
-        if (err instanceof Error && !err.message.includes("Print window")) {
+      } catch (error) {
+        const normalizedError = error instanceof Error 
+          ? error 
+          : new Error(String(error));
+        if (!normalizedError.message.includes("Print window")) {
           setError("Print failed - please allow popups and try again");
         }
+        console.error("Print error:", normalizedError);
       } finally {
         setIsPrinting(false);
       }
