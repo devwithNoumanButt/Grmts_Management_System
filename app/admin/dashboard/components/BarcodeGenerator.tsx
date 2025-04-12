@@ -237,82 +237,51 @@ export default function BarcodeGenerator() {
       setError(null);
 
       try {
-        if (printWindowRef.current) {
-          printWindowRef.current.close();
-          printWindowRef.current = null;
-        }
-
-        const printWindow = window.open("", "_blank", "width=800,height=600");
-        printWindowRef.current = printWindow;
-
-        if (!printWindow) {
-          throw new Error("Popup blocked - please allow popups");
+        let printFrame = document.getElementById('print-frame') as HTMLIFrameElement;
+        if (!printFrame) {
+          printFrame = document.createElement('iframe');
+          printFrame.id = 'print-frame';
+          printFrame.style.position = 'fixed';
+          printFrame.style.right = '0';
+          printFrame.style.bottom = '0';
+          printFrame.style.width = '0';
+          printFrame.style.height = '0';
+          printFrame.style.border = 'none';
+          document.body.appendChild(printFrame);
         }
 
         const { styles, barcodes, script } = printContent(targetVariants);
+        const printDoc = printFrame.contentWindow?.document;
+        if (!printDoc) throw new Error("Could not access print frame");
 
-        printWindow.document.write(`
+        printDoc.write(`
           <html>
             <head><title>Print Barcodes</title>${styles}</head>
             <body>${barcodes}${script}</body>
           </html>
         `);
-        printWindow.document.close();
+        printDoc.close();
 
         const printSuccess = await new Promise<boolean>((resolve) => {
-          let printAttempted = false;
-          let cleanupDone = false;
+          if (!printFrame.contentWindow) {
+            resolve(false);
+            return;
+          }
 
-          const doCleanup = () => {
-            if (cleanupDone) return;
-            cleanupDone = true;
-
-            if (printTimeoutRef.current) {
-              clearTimeout(printTimeoutRef.current);
-            }
-
-            try {
-              if (printWindow && !printWindow.closed) {
-                printWindow.close();
-              }
-            } catch (error) {
-              console.error("Window close error:", error);
-            }
-
-            printWindowRef.current = null;
-          };
-
-          const handleAfterPrint = () => {
-            if (!printAttempted) return;
-            doCleanup();
+          const handlePrintComplete = () => {
             resolve(true);
           };
 
-          const checkWindowState = () => {
-            if (printWindow.closed) {
-              doCleanup();
+          printFrame.contentWindow.onafterprint = handlePrintComplete;
+
+          setTimeout(() => {
+            try {
+              printFrame.contentWindow?.print();
+            } catch (error) {
+              console.error("Print execution error:", error);
               resolve(false);
-              return;
             }
-
-            if (!printAttempted) {
-              printAttempted = true;
-              try {
-                printWindow.print();
-              } catch (error) {
-                console.error("Print execution error:", error);
-                doCleanup();
-                resolve(false);
-              }
-            }
-
-            printTimeoutRef.current = window.setTimeout(checkWindowState, 500);
-          };
-
-          printWindow.addEventListener("afterprint", handleAfterPrint);
-          printWindow.addEventListener("load", () => {
-            printTimeoutRef.current = window.setTimeout(checkWindowState, 1000);
-          });
+          }, 500);
         });
 
         if (printSuccess) {
@@ -331,9 +300,7 @@ export default function BarcodeGenerator() {
         const normalizedError = error instanceof Error 
           ? error 
           : new Error(String(error));
-        if (!normalizedError.message.includes("Print window")) {
-          setError("Print failed - please allow popups and try again");
-        }
+        setError("Print failed - please try again");
         console.error("Print error:", normalizedError);
       } finally {
         setIsPrinting(false);
