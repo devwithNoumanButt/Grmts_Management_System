@@ -168,8 +168,8 @@ export default function OrdersList() {
           <div class="header">
             <h4>Fashion Arena</h4>
             <div class="store-info">
-              <p>Opp. Prisma Mall Basement of Cafecito Grw Cantt.</p>
-              <p>Tel: 055-386577 / 0321-7456467</p>
+              <p>Opp. Prisma Mall Gt Road Rahwali Cantt.</p>
+              <p>Tel: 055-386577 / 0308-1617518</p>
             </div>
           </div>
           <p class="separator">-------------------------------</p>
